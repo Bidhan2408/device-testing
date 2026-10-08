@@ -39,6 +39,7 @@
 - [AW+ config prompts abort and log you out](awplus-config-prompts-abort-and-logout.md) — `mls qos enable`/`no mls qos`/`atmf secure-mode enable-all` PROMPT (y/n)
 - [IE520 MAC-auth username format](ie520-mac-auth-username-format.md) — the DUT sends `00-f0-4d-00-77-17` (lowercase, hyphenated); no auth-mac username-format command exists
 - [AW+ CLI wiki on the share](awplus-cli-wiki-on-the-share.md) — 3437 command pages with syntax, MODE and platform tables; NO IE520 pages (cousins IE560/IE360/x230v2/IE340 absent too) → read x230; the IE520 mode can differ
+- [ck.db: cross-reference a case by TITLE](ckdb-case-lookup-by-title.md) — it IS reachable, in terrenceb's lab home not yours; AWPTCM-T<id> numbers do NOT exist in ck.db (it keys on AWP-nnnn) so join on `title` in `testlink_cases`; empty `steps_text` → read `summary`
 - [tb470 bench structural limits](tb470-bench-structural-limits.md) — CORRECTED 09-23 (ports) + 09-24: tcpreplay gives LINE RATE (~983 Mbps/NIC); left: no MRP, TACACS+, SFP+ link faulty
 - [Campaign measurement discipline](campaign-measurement-discipline.md) — baseline the feature OFF first, make traffic TRANSIT the DUT, split PROVEN from NOT MEASURABLE
 - [STP mode change re-enables spanning tree](stp-mode-change-reenables-spanning-tree.md) — a `spanning-tree mode` change silently drops `no spanning-tree <mode> enable`
@@ -63,3 +64,6 @@
 - [terminal (no) monitor is exec-only](terminal-monitor-exec-only.md) — does NOT toggle; config-mode/busy-console sends caused the "Command [terminal no monitor] failed" lines; `end` first or console.py monitor_off()
 - [AW+ GUI update via Load-gui9.sh](awplus-gui-load-script.md) — `activate flash:/Load-gui9.sh` on the switch; needs temp IP + route to 10.32.18.135 via tb470 eth2; delete old .gui after
 - [IE520 image update procedure](ie520-image-update-procedure.md) — Test Engineer 2026-10-05: TFTP→master, sync, park EACH unit at Boot Menu 2→1 (Flash)→file, then 9 on all; delete old .rel after. Forced-flash banner = expected; re-read /tftproot size+.info just before TFTP; `boot system` is config-mode
+- [Review feature docs before testing](review-feature-docs-before-testing.md) — Test Engineer 2026-10-08: read the Feature Overview guide + the product's TPS (support matrix = where UNSUPPORTED is read off) + Test Strategy BEFORE drafting steps; TPS says Yes but DUT lacks it = a finding, not a limit
+- [Lab wiki reachable from a testbox](lab-wiki-reachable-from-a-testbox.md) — wiki.atlnz.lc is open from tbNNN (not the dev host, not WebFetch); curl with `action=raw` for clean wikitext
+- [Satisfactory level of testing](satisfactory-level-of-testing.md) — Test Engineer 2026-10-08: the step text is the FLOOR — always also prove removal (gone from running-config) and persistence across reboot; baseline OFF first; 300+ case campaign so depth is the default
