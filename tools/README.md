@@ -10,9 +10,62 @@ adding one are in [../logged-output.md](../logged-output.md) §2:
 
 ## How to run them
 
-- **Copy the whole directory to the testbox's scratch** and run from there. For example:
+- **From a session, every step on a box goes through `tools/tb`** (below). Run it from the repo
+  root on the dev host. It copies this directory to the box, sets the ssh agent itself, and runs
+  each tool on the box.
+- **By hand, copy the whole directory to the testbox's scratch** and run from there. For example:
   `scp -r tools <box>:/tmp/<campaign>/`, then `cd /tmp/<campaign>/tools`. The tools import each
   other from their own directory, so keep them together.
+
+### `tb`
+The one way a device-testing session reaches a testbox: `tools/tb <action> <box> [args...]`
+(Ask-CK decision D6, 2026-10-09).
+- **Why it exists:** every ssh step is one named action, so a settings file can allow each with
+  one narrow rule (`Bash(tools/tb ckcon *)`). A hand-built `SSH_AUTH_SOCK=… ssh tbNNN '…'`
+  line can never match a rule.
+- **What it does for you:**
+  - sets `SSH_AUTH_SOCK` (the keyring agent);
+  - picks the box's Python (tb105: `python3.8`; or set `TB_PY`);
+  - quotes every argument;
+  - runs locally when the host IS the box.
+- **Actions** (`tools/tb --help` gives the full list with arguments):
+  - read-only: `hostname`, `precheck`, `probe` (`bench_probe.py run` only), `holders`, `ps`,
+    `nics`, `template`, `tail`, `grep`, `waitfor`;
+  - scratch: `scratch <name>` (a fresh copy of `tools/` into `/tmp/<name>/tools`), `put`;
+  - consoles: `ckcon ckyn cfg qmark peek listen poll reloadc ckreload` (`<scratch> <uN> <baud>
+    ...`; the transcript goes to `/tmp/<scratch>/console-<uN>.log`), and `tftp_copy flash_copy
+    bootmenu_escape bootmenu_park witness_log` (`<scratch> <uN> ...`);
+  - other tools: `tool`, `sudotool` (the root traffic tools), `capture` (tcpdump), `ping`,
+    `case` (a case script you `put` first), `pdu`;
+  - framework runs: `fwprep`, `fw` (always `--noupdate --nodefaultcfg`; writes `run.log` and
+    `run.exit`);
+  - housekeeping: `killmine`.
+- **Where:** the dev host (or the box itself); **needs:** Python 3.6+, ssh/scp with the keyring
+  agent
+- **Imports:** none (it runs the other tools on the box)
+- **Guards:**
+  - Every console action first runs `fuser` on the device node and refuses (exit 5), naming the
+    holder, if any other process has it open.
+  - `probe` refuses `apply`/`--force`.
+  - `tail`/`grep`/`waitfor` read only under `/tmp/` and `/home/st-art/pytest-create/`.
+  - `killmine` kills only this repo's tools, probes and framework runs, never a minicom, screen
+    or tmux (the Test Engineer runs as the same Unix user).
+  - There are no actions for `apply`, licences or root changes: those are STANDING-ORDERS §4.
+- **Settings for Ask-CK-launched campaigns:** `.claude/ask-ck-campaign.settings.json`.
+  - Ask-CK's launcher passes it with `claude --settings <it>`; Claude Code never loads it on its
+    own.
+  - It holds one allow rule per action (`case` deliberately has none), denies for
+    `bench_probe.py apply`, and an `autoMode` block: the lab as trusted infrastructure, console
+    configuration allowed, and the STANDING-ORDERS §4 items as `hard_deny`.
+  - Approved by Terrence 2026-10-09.
+- **Status:** verified 2026-10-09 on tb470:
+  - `hostname`, `precheck`, `holders`, `ps`, `nics`, `template`, `scratch`, `put` + `case`,
+    `waitfor`, `tail`;
+  - `ckcon` on u0 (x230, `show clock`);
+  - the held-console refusal, with `listen` holding u0;
+  - the refusals for `probe apply`, `tail /etc/passwd`, a bad box name and `killmine 1`.
+
+  `fwprep`, `fw`, `pdu`, `sudotool` and `capture` have not yet run: check their first use.
 - **Console tools take `<tty> <baud> <transcript>` first.**
   - `<tty>` is the unit's console on the box, for example `/dev/u3`.
   - `<transcript>` is where every byte sent and received is written. Put it at
@@ -234,6 +287,34 @@ SAVES the default boot source).
   boot` and running-config unchanged. The version before it read `Enter selection ==>` as a CLI
   prompt and sent `9\r` from any menu, which in `Select device` changes the boot source
 
+### `bootmenu_park.py`
+Catches a rebooting unit at `Press <Ctrl+B>`, then sets the bootloader's default boot source to
+Flash + a named file: main menu `2`, the Flash digit, the file's number + Enter, `Saving
+settings... Complete`. It leaves the unit **parked at the main menu**. Release it with
+`bootmenu_escape.py`, so several units can be parked first and released together (memory
+`ie520-image-update-procedure`).
+- **Run:** `bootmenu_park.py <tty> <flash-file> [--baud 115200] [--transcript PATH] [--reload] [--watch 600]`
+  - **A stack member:** start this first, then send `reload stack-member N` on the master.
+  - **The master or a standalone:** pass `--reload`. The tool logs in on the same port, sends
+    `reload`, answers `y`, then watches.
+- **Where:** testbox; **needs:** pyserial, `stty`
+- **Imports:** console, awlogin (only with `--reload`)
+- **Exit codes:**
+  - 0: parked;
+  - 2: unexpected screen; the unit is left in the bootloader, so read it, then run `bootmenu_escape.py`;
+  - 3: no Ctrl+B prompt;
+  - 7: `--reload` could not log in.
+- **Limits:**
+  - The menu strings are the AW+ bootloader's: IE520 9.2.0 and AR4050S 5.2.8. Check them on any
+    other product first.
+  - It never sends `9`.
+- **Status:**
+  - The park sequence ran on tb470 on 2026-10-08 as session scratch: IE520 stack members 1, 3 and
+    4 plus `IE520-sa`, bootloader 9.2.0, all parked and released. On 2026-10-09 the AR4050S
+    (5.2.8) was then finished by hand after the first version misread queued Ctrl+B redraws.
+  - **This consolidated version** (drain the redraws, re-draw with a bare CR, `--reload` built in)
+    **has not yet run on hardware**: check its first run.
+
 ## Product-specific stress
 
 ### `i2c_stress.py`
@@ -279,6 +360,31 @@ pre-case versus post-case teardown check (STANDING-ORDERS §1).
 - **Imports:** none
 - **Limits:** it needs ckcon-style `HH:MM:SS >>> cmd` headers, and crashes if a file has no running-config
 - **Status:** verified 2026-10-02 on tb470 (two real IE520 captures, identical -> no output)
+
+### `rc2cfg.py`
+Turns the first `show running-config` in a saved `ckcon.py` stdout into a loadable per-device
+`<dev>.cfg` (logged-output.md §2): the given header lines first (each prefixed `! `), then the
+config with the echoed command, bare prompts, pager remnants, CRs and blank lines removed.
+- **Run:** `rc2cfg.py <ckcon-stdout> <out.cfg> <header-line> [<header-line> ...]`
+- **Where:** anywhere; **needs:** nothing beyond Python
+- **Imports:** none
+- **Limits:** it reads the ckcon `HH:MM:SS >>> cmd` stdout format only (as `rcdiff.py` does)
+- **Status:** verified 2026-10-08 on tb470, IE520 stack master (u5): T22650 `stk_a.cfg`, 186 config lines
+
+### `case_tokens.py`
+Per-case token usage and process metrics from a tester's Claude Code transcript, for
+`/create-logs`' process review (logged-output.md §5). Splits the transcript at the tester's
+`RESULT <id>` lines: a case runs from its first tool call into its own `<id>/` folder to its
+`RESULT`; everything else is group overhead. Per segment: API calls, input / cache-write /
+cache-read / output tokens, tool calls by name, wall time, characters of tool output read back,
+the five largest outputs and the commands repeated verbatim.
+- **Run:** `case_tokens.py --find ~/.claude/projects/<repo slug> --cases <id,id,...> [--json]`,
+  or `--transcript <file.jsonl>` instead of `--find`
+- **Where:** the dev host that ran the session (transcripts are local); **needs:** nothing beyond Python
+- **Imports:** none
+- **Limits:** needs the `RESULT` SendMessage lines (logged-output.md §2); a case that never
+  touched `<id>/` before its RESULT counts from the RESULT call alone
+- **Status:** verified 2026-10-08 on the modbus group (T22650–T22655, one bench-runner transcript)
 
 ## Traffic, frames and protocol emulators
 
@@ -431,4 +537,24 @@ probes. Use it for AW+ SCADA Modbus gateway cases.
 - **Limits:**
   - The register decodings were written for the IE520 Modbus map (Mapping Version 5).
   - Exit 2 means either an argument error or "no connection".
-- **Status:** generalised 2026-10-02, not re-verified on hardware
+  - An exception prints `EXCEPTION code=N (<name>) fc=0xNN`, the Modbus exception code itself
+    (2026-10-08; before that it printed only `status=1`, and codes were inferred from the server's
+    counters). pymodbus' own stderr line `Exception response 131 / 0` shows 0 for the code: ignore it.
+- **Status:** verified 2026-10-08 on tb470/IE520 stack (main-calanm), T22650 reads over IPv4, units 0-4;
+  exception codes verified 2026-10-08 against a pymodbus 3.8.6 server on tb470 loopback (code 2)
+
+### `mbplan.py`
+Runs a Modbus/TCP test **plan** and grades every line against its expected result, printing one
+PASS / FAIL / INFO / ERROR row per line; the raw TX bytes and full CLI text go to `--log` /
+`--out`. Plan actions: `step`, `read`, `write`, `probe <tcp-port> ok|refused`, `cli <cmd> [;;
+<cmd>...] [=~ regex]` (through `ckcon.py`, one session), `log <regex>` (`show log | include`),
+`sleep`, `port <tcp-port>`. Expectations: a value, `~` (record only), `>N`/`<N`, `exc`/`exc:N`,
+`ok`. Port registers by name: `@1.0.2[+offset]` = unit 1, 0x5000 + 13*(port-1). Plans live per
+bench and suite: `tb470/IE520/plans/modbus/` (T22650-T22655, with their README).
+- **Run:** `mbplan.py --host H [--port 502] [--console /dev/uN --baud B --transcript F] [--log mb.log] [--out plan.out] [--var NAME=VALUE] PLAN`
+- **Where:** the testbox (TCP to the DUT); **needs:** pymodbus 3.x; `mb.py`, `ckcon.py`, `console.py` beside it (copy `tools/` whole)
+- **Imports:** `mb.py` (decode, exception text); runs `ckcon.py` for `cli`/`log` lines
+- **Limits:** one TCP connection per line (the IE520 allows 1); per-member register maps beyond the
+  port block are written as plain addresses in the plan; FLOAT values compare at 3 decimals
+- **Status:** Modbus lines (read/write/exception/probe/port/@port) verified 2026-10-08 against a pymodbus
+  3.8.6 server on tb470 loopback; `cli`/`log` lines NOT yet run against a console (first real use: check them)

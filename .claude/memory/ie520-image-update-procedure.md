@@ -41,4 +41,32 @@ IE520s before they gave this procedure.
   2026-10-06) → `end`.
 - Step 3's member reload: `reload stack-member N` on the master (`(y/n)` → `y\r`), with the park
   watcher already reading that member's console.
+- **Step 0: free flash and the file name (2026-10-08, all six tb470 units in one pass).** The
+  running `.rel` cannot be overwritten or deleted, so stage the new one under its `.info` name
+  (`IE520-awplus_main-20261008-57.rel`).
+  - Every member needs room for it: the sync fails on a member that lacks space.
+  - The master had 176 KB free. Deleting the old 40.1 MB `.rel` left only about 4 KB of margin,
+    so the Test Engineer chose to delete a stray `release.rel` as well. Ask before deleting
+    anything that is not an old `.rel`.
+  - Cross-member delete works from the master: `delete IE520-stk-N/flash:<file>`, then `y\r`.
+- **2026-10-08 timings:** TFTP 40 MB to the master took 323 s. The sync to two members took
+  **72 s**. Each park took ~6–14 s from `reload` to `Ctrl+B`. After `9` on all four, `login:`
+  came in about 3 min.
+- **On the scripted park** (2026-10-08): `park.py` was written in the session scratchpad and is
+  NOT a repo tool yet. Its recipe is in `tb470/IE520/SESSION-HANDOVER-2026-10-09.md`.
+  - A unit that reloads itself (the master, or a standalone) needs `reload` sent on the same port
+    the watcher then reads: log in, `reload`, `y\r`, close, then open the watcher.
+  - Release with `tools/bootmenu_escape.py`; it sends `9` from the main menu.
+- **Non-IE520 units in the same pass:**
+  - **x230** (bootloader 6.2.40, no forced file): `boot system` + `reload` is enough.
+  - The x230 had no IP. A temporary `interface vlan11` / `ip address 10.38.215.20/27` worked,
+    running-only and cleared by the reload. Its port1.0.2 (vlan11) lands untagged in the stack's
+    VLAN 1, the same segment as tb470 eth1.
+  - **AR4050S** (done 2026-10-09). Its bootloader 5.2.8 is ALSO set to a fixed file (banner
+    `forced to boot from a non-standard location`), so `boot system` + `reload` brought back the
+    OLD build. It needs the same Boot Menu park (`2` → `1` Flash → file → `9`).
+  - Path: the Test Engineer cabled tb470 eth2 to its port1.0.1 (vlan1), plus a temporary
+    `ip address 10.38.215.40/27 secondary` on vlan1. TFTP of 67.7 MB took about 10 s.
+  - Its queued Ctrl+B presses re-drew the main menu about 9 times and hid the `2`. That fix is now
+    in `tools/bootmenu_park.py`.
 - Related: [[ie520-4stack-flashprep]], [[read-the-transcripts-before-driving-hardware]].
